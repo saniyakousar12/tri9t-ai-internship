@@ -32,7 +32,7 @@ A backend system for the CardioTrack CT-200 Home Blood Pressure Monitor manual t
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/tri9t-ai-internship.git
+git clone https://github.com/saniyakousar12/tri9t-ai-internship.git
 cd tri9t-ai-internship
 ```
 
@@ -415,9 +415,6 @@ Saniya Kousar - AI Engineering Internship Candidate
 
 ---
 
-
-
----
 
 ## References
 
