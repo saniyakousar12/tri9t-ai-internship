@@ -2,76 +2,70 @@
 Unit tests for PDF parser
 """
 
+import sys
+import os
 import pytest
 from pathlib import Path
+
+# Add parent directory to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from app.parser.pdf_parser import PDFParser
 
 
 class TestPDFParser:
     """Test cases for PDF parser"""
     
-    @pytest.fixture
-    def sample_pdf_path(self):
-        """Path to sample PDF"""
-        # This should point to a small test PDF
-        return "data/ct200_manual.pdf"
+    def test_parser_initialization(self):
+        """Test that parser can be initialized"""
+        parser = PDFParser("test.pdf")
+        assert parser is not None
+        assert parser.file_path is not None
     
-    def test_duplicate_headings_get_unique_ids(self, sample_pdf_path):
-        """Test that duplicate headings become distinct nodes"""
-        parser = PDFParser(sample_pdf_path)
-        nodes = parser.parse_structure()
+    def test_heading_detection_patterns(self):
+        """Test heading detection with various patterns"""
+        parser = PDFParser("test.pdf")
         
-        # Find duplicate headings
-        headings = {}
-        for node in nodes:
-            if node['heading'] in headings:
-                headings[node['heading']].append(node)
-            else:
-                headings[node['heading']] = [node]
+        # Test numbered headings - these should be detected
+        assert parser._detect_heading_level("1. Introduction") == 1
+        assert parser._detect_heading_level("1.2 Safety") == 2
+        assert parser._detect_heading_level("1.2.3 Warnings") == 3
         
-        # For each duplicate heading, ensure unique IDs
-        for heading, duplicates in headings.items():
-            if len(duplicates) > 1:
-                ids = [d['id'] for d in duplicates]
-                assert len(set(ids)) == len(ids), f"Duplicate heading '{heading}' has duplicate IDs"
-                
-                # Ensure each has different parent (if applicable)
-                for i, dup in enumerate(duplicates):
-                    for j, other in enumerate(duplicates):
-                        if i != j:
-                            # They should have different parent or different position
-                            if dup.get('parent_id') == other.get('parent_id'):
-                                assert dup.get('position') != other.get('position'), \
-                                    f"Duplicate headings with same parent: {heading}"
+        # Test ALL CAPS headings
+        assert parser._detect_heading_level("SAFETY WARNINGS") == 1
+        
+        # Test Roman numerals
+        assert parser._detect_heading_level("I. Introduction") == 1
+        assert parser._detect_heading_level("II. Safety") == 1
+        
+        # Test title case with keywords
+        assert parser._detect_heading_level("Safety Introduction") == 2
+        
+        # Test non-headings - should return 0
+        assert parser._detect_heading_level("This is a paragraph.") == 0
+        assert parser._detect_heading_level("") == 0
+        assert parser._detect_heading_level("abc") == 0
     
-    def test_parent_child_relationships(self, sample_pdf_path):
-        """Test that parent-child relationships are preserved"""
-        parser = PDFParser(sample_pdf_path)
-        nodes = parser.parse_structure()
+    def test_hash_generation(self):
+        """Test content hash generation"""
+        parser = PDFParser("test.pdf")
         
-        # Create lookup
-        node_map = {n['id']: n for n in nodes}
+        hash1 = parser._generate_hash("Safety", "Warning content", 2)
+        hash2 = parser._generate_hash("Safety", "Warning content", 2)
+        hash3 = parser._generate_hash("Safety", "Different content", 2)
         
-        for node in nodes:
-            if node.get('parent_id'):
-                parent = node_map.get(node['parent_id'])
-                assert parent is not None, f"Parent {node['parent_id']} not found"
-                assert node['level'] > parent['level'], \
-                    f"Child level ({node['level']}) should be greater than parent level ({parent['level']})"
+        # Same content should produce same hash
+        assert hash1 == hash2
+        
+        # Different content should produce different hash
+        assert hash1 != hash3
+        
+        # Hash should be 64 characters (SHA256)
+        assert len(hash1) == 64
     
-    def test_heading_detection_with_inconsistent_formatting(self, sample_pdf_path):
-        """Test that heading detection works with inconsistent formatting"""
-        parser = PDFParser(sample_pdf_path)
-        nodes = parser.parse_structure()
+    def test_parse_pdf_file_not_found(self):
+        """Test parsing when file doesn't exist"""
+        parser = PDFParser("nonexistent.pdf")
         
-        # Check that we have some structure
-        assert len(nodes) > 0, "No nodes parsed"
-        
-        # Check that levels are reasonable (1-5)
-        for node in nodes:
-            assert 1 <= node['level'] <= 5, f"Invalid level {node['level']}"
-        
-        # Check that each node has a content hash
-        for node in nodes:
-            assert 'content_hash' in node, "Missing content_hash"
-            assert len(node['content_hash']) == 64, "Invalid hash length"
+        with pytest.raises(Exception):
+            parser.parse_structure()

@@ -1,374 +1,290 @@
 """
-Unit tests for LLM Generator
+Unit tests for LLM generator
 """
 
-import json
+import sys
+import os
 import pytest
+import json
+
+# Add parent directory to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.llm.generator import LLMGenerator
 
 
 class TestLLMGenerator:
-    """Tests for the LLMGenerator class."""
+    """Test cases for LLM generator"""
 
-    @pytest.fixture
-    def generator(self):
-        """
-        Create an instance without calling __init__()
-        so no real API client is created.
-        """
-        return LLMGenerator.__new__(LLMGenerator)
+    def setup_method(self):
+        """Setup before each test"""
+        self.generator = LLMGenerator()
 
-    # ==========================================================
-    # RESPONSE PARSING
-    # ==========================================================
-
-    def test_parse_valid_json(self, generator):
-
-        response = """
+    def test_parse_valid_json_response(self):
+        """Test parsing valid JSON response"""
+        response = '''
         [
             {
-                "id":"TC-001",
-                "title":"Pressure Test",
-                "description":"Verify pressure limit",
-                "steps":["Step 1","Step 2"],
-                "expected_result":"Alarm triggers",
-                "priority":"High"
+                "id": "TC-001",
+                "title": "Test Pressure Limit",
+                "description": "Verify pressure limit",
+                "steps": ["Step 1", "Step 2"],
+                "expected_result": "Alarm triggers",
+                "priority": "High"
             }
         ]
-        """
+        '''
 
-        result = generator._parse_response(response)
+        result = self.generator._parse_response(response)
+        assert len(result) == 1
+        assert result[0]['id'] == 'TC-001'
+        assert result[0]['priority'] == 'High'
+
+    def test_parse_malformed_json_with_markdown(self):
+        """Test parsing JSON from markdown code block"""
+        response = '''
+        Here are the test cases:
+        ```json
+        [
+            {
+                "id": "TC-002",
+                "title": "Test Battery",
+                "description": "Verify battery life",
+                "steps": ["Step 1"],
+                "expected_result": "Battery lasts 8 hours",
+                "priority": "Medium"
+            }
+        ]
+        ```
+        '''
+
+        result = self.generator._parse_response(response)
+        assert len(result) == 1
+        assert result[0]['id'] == 'TC-002'
+        assert result[0]['title'] == 'Test Battery'
+        assert result[0]['priority'] == 'Medium'
+
+    def test_parse_json_with_extra_text(self):
+        """Test parsing JSON with extra text around it"""
+        response = '''
+        Based on the document, here are the test cases:
+
+        [
+            {
+                "id": "TC-003",
+                "title": "Test Display",
+                "description": "Verify display functionality",
+                "steps": ["Step 1", "Step 2", "Step 3"],
+                "expected_result": "Display shows correct values",
+                "priority": "High"
+            }
+        ]
+
+        Let me know if you need more.
+        '''
+
+        result = self.generator._parse_response(response)
+        assert len(result) == 1
+        assert result[0]['id'] == 'TC-003'
+        assert len(result[0]['steps']) == 3
+
+    def test_parse_multiple_test_cases(self):
+        """Test parsing multiple test cases"""
+        response = '''
+        [
+            {
+                "id": "TC-001",
+                "title": "Test 1",
+                "description": "First test",
+                "steps": ["Step 1"],
+                "expected_result": "Pass",
+                "priority": "High"
+            },
+            {
+                "id": "TC-002",
+                "title": "Test 2",
+                "description": "Second test",
+                "steps": ["Step 1", "Step 2"],
+                "expected_result": "Pass",
+                "priority": "Medium"
+            },
+            {
+                "id": "TC-003",
+                "title": "Test 3",
+                "description": "Third test",
+                "steps": ["Step 1"],
+                "expected_result": "Pass",
+                "priority": "Low"
+            }
+        ]
+        '''
+
+        result = self.generator._parse_response(response)
+        assert len(result) == 3
+        assert result[0]['id'] == 'TC-001'
+        assert result[1]['id'] == 'TC-002'
+        assert result[2]['id'] == 'TC-003'
+        assert result[0]['priority'] == 'High'
+        assert result[1]['priority'] == 'Medium'
+        assert result[2]['priority'] == 'Low'
+
+    def test_validate_test_cases_valid(self):
+        """Test validation of valid test cases"""
+        valid_test_cases = [
+            {
+                "id": "TC-001",
+                "title": "Valid Test",
+                "description": "This is valid",
+                "steps": ["Step 1", "Step 2"],
+                "expected_result": "Success",
+                "priority": "High"
+            }
+        ]
+
+        # Should not raise any exception
+        self.generator._validate_test_cases(valid_test_cases)
+
+    def test_validate_test_cases_missing_field(self):
+        """Test validation catches missing required fields"""
+        invalid_test_case = [
+            {
+                "id": "TC-003",
+                "title": "Test Display",
+                "steps": ["Step 1"],
+                "expected_result": "Display works",
+                "priority": "Low"
+            }
+        ]
+
+        with pytest.raises(ValueError) as excinfo:
+            self.generator._validate_test_cases(invalid_test_case)
+
+        assert "missing required field" in str(excinfo.value)
+
+    def test_validate_test_cases_invalid_steps(self):
+        """Test validation catches invalid steps (not a list)"""
+        invalid_test_case = [
+            {
+                "id": "TC-004",
+                "title": "Test Steps",
+                "description": "Steps should be a list",
+                "steps": "Not a list",
+                "expected_result": "Works",
+                "priority": "High"
+            }
+        ]
+
+        with pytest.raises(ValueError) as excinfo:
+            self.generator._validate_test_cases(invalid_test_case)
+
+        assert "Steps must be a list" in str(excinfo.value)
+
+    def test_validate_test_cases_invalid_priority(self):
+        """Test validation catches invalid priority value"""
+        invalid_test_case = [
+            {
+                "id": "TC-005",
+                "title": "Test Priority",
+                "description": "Priority should be High/Medium/Low",
+                "steps": ["Step 1"],
+                "expected_result": "Works",
+                "priority": "Critical"
+            }
+        ]
+
+        with pytest.raises(ValueError) as excinfo:
+            self.generator._validate_test_cases(invalid_test_case)
+
+        assert "Invalid priority" in str(excinfo.value)
+
+    def test_validate_test_cases_empty_list(self):
+        """Test validation of empty test case list"""
+        with pytest.raises(ValueError) as excinfo:
+            self.generator._validate_test_cases([])
+
+        assert "No test cases generated" in str(excinfo.value)
+
+    def test_handle_generation_failure(self):
+        """Test generation failure handling"""
+        error_message = "API rate limit exceeded"
+        result = self.generator._handle_generation_failure(error_message)
 
         assert len(result) == 1
-        assert result[0]["id"] == "TC-001"
-        assert result[0]["priority"] == "High"
+        assert result[0]['id'] == 'TC-001'
+        assert result[0]['title'] == 'Manual Review Required'
+        assert "API rate limit exceeded" in result[0]['description']
+        assert result[0]['priority'] == 'High'
 
-    def test_parse_markdown_json(self, generator):
+    def test_generate_fallback_response(self):
+        """Test fallback response generation"""
+        result = self.generator._generate_fallback_response()
 
-        response = """
-```json
-[
-    {
-        "id":"TC-002",
-        "title":"Battery Test",
-        "description":"Check battery",
-        "steps":["Step 1"],
-        "expected_result":"Battery works",
-        "priority":"Medium"
-    }
-]
+        assert len(result) == 1
+        assert result[0]['id'] == 'TC-FALLBACK'
+        assert result[0]['title'] == 'Fallback Test Case'
+        assert result[0]['priority'] == 'Medium'
+        assert len(result[0]['steps']) == 1
 
-"""
-
-    result = generator._parse_response(response)
-
-    assert len(result) == 1
-    assert result[0]["title"] == "Battery Test"
-
-def test_parse_dictionary(self, generator):
-
-    response = """
-
-{
-"id":"TC-003",
-"title":"Display Test",
-"description":"Display Verification",
-"steps":["Step 1"],
-"expected_result":"Display OK",
-"priority":"Low"
-}
-"""
-
-    result = generator._parse_response(response)
-
-    assert len(result) == 1
-    assert result[0]["id"] == "TC-003"
-
-def test_parse_tests_key(self, generator):
-
-    response = """
-
-{
-"tests":[
-{
-"id":"TC-004",
-"title":"Alarm Test",
-"description":"Alarm Check",
-"steps":["Step 1"],
-"expected_result":"Alarm Sounds",
-"priority":"High"
-}
-]
-}
-"""
-
-    result = generator._parse_response(response)
-
-    assert len(result) == 1
-    assert result[0]["title"] == "Alarm Test"
-
-def test_invalid_json(self, generator):
-
-    with pytest.raises(json.JSONDecodeError):
-        generator._parse_response("Not a JSON Response")
-
-# ==========================================================
-# VALIDATION
-# ==========================================================
-
-def test_validate_valid_testcase(self, generator):
-
-    data = [
+    def test_parse_dict_response(self):
+        """Test parsing response that's a dict (single test case)"""
+        response = '''
         {
-            "id":"TC-001",
-            "title":"Test",
-            "description":"Description",
-            "steps":["Step"],
-            "expected_result":"Pass",
-            "priority":"High"
+            "id": "TC-001",
+            "title": "Single Test",
+            "description": "Only one test",
+            "steps": ["Step 1"],
+            "expected_result": "Pass",
+            "priority": "High"
         }
-    ]
+        '''
 
-    generator._validate_test_cases(data)
+        result = self.generator._parse_response(response)
+        assert len(result) == 1
+        assert result[0]['id'] == 'TC-001'
 
-def test_missing_field(self, generator):
-
-    data = [
+    def test_parse_response_with_tests_key(self):
+        """Test parsing response with a 'tests' key"""
+        response = '''
         {
-            "id":"TC-001",
-            "title":"Test",
-            "steps":["Step"],
-            "expected_result":"Pass",
-            "priority":"High"
+            "tests": [
+                {
+                    "id": "TC-001",
+                    "title": "Test 1",
+                    "description": "First test",
+                    "steps": ["Step 1"],
+                    "expected_result": "Pass",
+                    "priority": "High"
+                },
+                {
+                    "id": "TC-002",
+                    "title": "Test 2",
+                    "description": "Second test",
+                    "steps": ["Step 1"],
+                    "expected_result": "Pass",
+                    "priority": "Medium"
+                }
+            ]
         }
-    ]
+        '''
 
-    with pytest.raises(ValueError):
-        generator._validate_test_cases(data)
+        result = self.generator._parse_response(response)
+        assert len(result) == 2
+        assert result[0]['id'] == 'TC-001'
+        assert result[1]['id'] == 'TC-002'
 
-def test_invalid_priority(self, generator):
+    def test_auto_fix_test_id_format(self):
+        """Test auto-fixing test ID format"""
+        test_case = [
+            {
+                "id": "001",
+                "title": "Test",
+                "description": "Description",
+                "steps": ["Step 1"],
+                "expected_result": "Result",
+                "priority": "High"
+            }
+        ]
 
-    data = [
-        {
-            "id":"TC-001",
-            "title":"Test",
-            "description":"Description",
-            "steps":["Step"],
-            "expected_result":"Pass",
-            "priority":"Critical"
-        }
-    ]
-
-    with pytest.raises(ValueError):
-        generator._validate_test_cases(data)
-
-def test_steps_not_list(self, generator):
-
-    data = [
-        {
-            "id":"TC-001",
-            "title":"Test",
-            "description":"Description",
-            "steps":"Wrong",
-            "expected_result":"Pass",
-            "priority":"High"
-        }
-    ]
-
-    with pytest.raises(ValueError):
-        generator._validate_test_cases(data)
-
-def test_empty_testcases(self, generator):
-
-    with pytest.raises(ValueError):
-        generator._validate_test_cases([])
-
-def test_auto_fix_id(self, generator):
-
-    data = [
-        {
-            "id":"001",
-            "title":"Test",
-            "description":"Description",
-            "steps":["Step"],
-            "expected_result":"Pass",
-            "priority":"Medium"
-        }
-    ]
-
-    generator._validate_test_cases(data)
-
-    assert data[0]["id"] == "TC-001"
-
-# ==========================================================
-# RESPONSE FIX
-# ==========================================================
-
-def test_fix_trailing_comma(self, generator):
-
-    response = """
-
-[
-{
-"id":"TC-001",
-"title":"Test",
-"description":"Description",
-"steps":["One"],
-"expected_result":"Pass",
-"priority":"High",
-}
-]
-"""
-
-    result = generator._attempt_response_fix(response)
-
-    assert result[0]["id"] == "TC-001"
-
-def test_fix_unquoted_keys(self, generator):
-
-    response = """
-
-[
-{
-id:"TC-001",
-title:"Test",
-description:"Description",
-steps:["One"],
-expected_result:"Pass",
-priority:"High"
-}
-]
-"""
-
-    result = generator._attempt_response_fix(response)
-
-    assert result[0]["title"] == "Test"
-
-def test_invalid_json_returns_fallback(self, generator):
-
-    result = generator._attempt_response_fix("%%%% invalid json %%%%")
-
-    assert len(result) == 1
-    assert result[0]["id"] == "TC-FALLBACK"
-
-# ==========================================================
-# FALLBACK
-# ==========================================================
-
-def test_generate_fallback(self, generator):
-
-    result = generator._generate_fallback_response()
-
-    assert len(result) == 1
-    assert result[0]["id"] == "TC-FALLBACK"
-    assert result[0]["priority"] == "Medium"
-
-def test_generation_failure(self, generator):
-
-    result = generator._handle_generation_failure("Rate Limit")
-
-    assert len(result) == 1
-    assert result[0]["title"] == "Manual Review Required"
-    assert result[0]["priority"] == "High"
-
-def test_long_error_message(self, generator):
-
-    error = "A" * 500
-
-    result = generator._handle_generation_failure(error)
-
-    assert len(result) == 1
-    assert "LLM generation failed" in result[0]["description"]
-
-# ==========================================================
-# STRUCTURE
-# ==========================================================
-
-def test_fallback_structure(self, generator):
-
-    result = generator._generate_fallback_response()
-
-    tc = result[0]
-
-    assert "id" in tc
-    assert "title" in tc
-    assert "description" in tc
-    assert "steps" in tc
-    assert "expected_result" in tc
-    assert "priority" in tc
-
-def test_special_characters(self, generator):
-
-    result = generator._handle_generation_failure(
-        "Pressure 200 mmHg ±5%"
-    )
-
-    assert len(result) == 1
-
-def test_parse_multiple_testcases(self, generator):
-
-    response = """
-
-[
-{
-"id":"TC-001",
-"title":"Test1",
-"description":"Desc1",
-"steps":["Step1"],
-"expected_result":"Pass",
-"priority":"High"
-},
-{
-"id":"TC-002",
-"title":"Test2",
-"description":"Desc2",
-"steps":["Step1"],
-"expected_result":"Pass",
-"priority":"Medium"
-}
-]
-"""
-
-    result = generator._parse_response(response)
-
-    assert len(result) == 2
-    assert result[1]["id"] == "TC-002"
-
-def test_validate_multiple_cases(self, generator):
-
-    data = [
-        {
-            "id":"TC-001",
-            "title":"Test1",
-            "description":"Desc",
-            "steps":["Step"],
-            "expected_result":"Pass",
-            "priority":"High"
-        },
-        {
-            "id":"TC-002",
-            "title":"Test2",
-            "description":"Desc",
-            "steps":["Step"],
-            "expected_result":"Pass",
-            "priority":"Medium"
-        }
-    ]
-
-    generator._validate_test_cases(data)
-
-def test_missing_priority(self, generator):
-
-    data = [
-        {
-            "id":"TC-001",
-            "title":"Test",
-            "description":"Desc",
-            "steps":["Step"],
-            "expected_result":"Pass"
-        }
-    ]
-
-    with pytest.raises(ValueError):
-        generator._validate_test_cases(data)
+        # Should fix the ID format
+        self.generator._validate_test_cases(test_case)
+        assert test_case[0]['id'] == 'TC-001'

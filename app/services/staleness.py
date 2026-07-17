@@ -4,6 +4,7 @@ Staleness detection service for generated test cases
 
 from typing import Dict, List, Optional
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 import logging
 
 from app.models.node import Node
@@ -38,12 +39,12 @@ class StalenessChecker:
         
         current_version = current_doc.version
         
-        # Get nodes in selection at generation time
+        # Get nodes in selection at generation time - FIXED with text()
         result = db.execute(
-            "SELECT node_id FROM selection_nodes WHERE selection_id = ?",
-            (selection_id,)
+            text("SELECT node_id FROM selection_nodes WHERE selection_id = :selection_id"),
+            {"selection_id": selection_id}
         )
-        node_ids = [row[0] for row in result]
+        node_ids = [row[0] for row in result.fetchall()]
         
         if not node_ids:
             return {

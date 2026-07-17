@@ -1,5 +1,5 @@
 """
-Generated Test model for storing LLM outputs in MongoDB
+Generated Test model for storing LLM outputs
 """
 
 from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey

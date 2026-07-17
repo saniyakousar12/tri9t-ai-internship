@@ -22,6 +22,12 @@ class LLMGenerator:
         self.client = self._initialize_client()
         self.model = settings.llm_model
         self.temperature = settings.llm_temperature
+        # Fallback models if primary fails
+        self.fallback_models = [
+            "llama-3.1-8b-instant",
+            "llama-3.3-70b-versatile",
+            "qwen/qwen3-32b"
+        ]
     
     def _initialize_client(self):
         """Initialize LLM client based on provider"""
